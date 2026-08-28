@@ -1,0 +1,111 @@
+// ~/.openclaw/openclaw.json — a hardened baseline.
+//
+// This is a STARTING POSTURE, not a finished policy. It closes the CRITICAL that
+// `openclaw security audit` reports on a fresh install, and it says no to a set of
+// capabilities most personal assistants never need.
+//
+// Do not paste this in and trust it. Merge the blocks you want into your own file,
+// then verify against your build:
+//
+//   openclaw config validate
+//   openclaw security audit
+//   openclaw security audit --deep
+//
+// The key NAMES below are taken from the OpenClaw docs and a real audit run. Nesting
+// can shift between builds — `openclaw config get` and `openclaw config validate` are
+// the authority, not this file.
+
+{
+  // ─────────────────────────────────────────────────────────────────────
+  // WHO CAN REACH IT — the Gateway boundary
+  // ─────────────────────────────────────────────────────────────────────
+  gateway: {
+    mode: "local",              // local hub; not a shared multi-tenant service
+    bind: "loopback",           // 127.0.0.1 only — the single most valuable line here
+    auth: {
+      mode: "token",            // fixes the fresh-install CRITICAL: gateway.loopback_no_auth
+      token: "<long-random>",   // generate real randomness; never commit the real value
+    },
+    trustedProxies: [],         // empty = trust nothing. Populate ONLY if you actually
+                                // reverse-proxy, with your proxy's IPs — otherwise the
+                                // "is this client local?" check can be spoofed.
+  },
+
+  // ─────────────────────────────────────────────────────────────────────
+  // WHO CAN TALK TO IT — channels and session isolation
+  // ─────────────────────────────────────────────────────────────────────
+  session: {
+    dmScope: "per-channel-peer", // one conversation per person per channel; stops
+                                 // context from one contact leaking into another's
+  },
+
+  channels: {
+    // Key names below are verified; confirm the nesting for your build with
+    // `openclaw config get`.
+    whatsapp: {
+      dmPolicy: "pairing",       // unknown senders get a time-limited code you approve
+                                 // (expires in 1h, max 3 pending). "open" means anyone
+                                 // who has your number is talking to your agent.
+      groups: {
+        requireMention: true,    // in group chats, only respond when addressed —
+                                 // an agent that reads every group message is a
+                                 // liability, not a feature
+      },
+    },
+  },
+
+  // ─────────────────────────────────────────────────────────────────────
+  // WHAT IT CAN TOUCH — tools
+  // ─────────────────────────────────────────────────────────────────────
+  tools: {
+    deny: [
+      "group:automation",       // scheduling, cron, webhooks — a handler that reaches
+                                // cron can give itself a standing job
+      "group:runtime",          // runtime/process control
+      "group:fs",               // filesystem access beyond what the agent needs
+      "sessions_spawn",         // no spawning new sessions
+      "sessions_send",          // no writing into other sessions
+    ],
+
+    exec: {
+      security: "deny",         // shell execution off by default
+      ask: "always",            // when it is enabled, a human approves every time
+      strictInlineEval: true,   // no loose inline evaluation of model-produced strings
+    },
+
+    // Note the audit's INFO block also reports `tools.elevated: enabled` and
+    // `browser control: enabled` on a fresh install. Both are worth turning off if
+    // you don't need them — look up the current keys with `openclaw docs elevated`
+    // rather than copying a guess from anywhere, this file included.
+  },
+
+  browser: {
+    // Only relevant if you keep browser control on. A dedicated browser profile is
+    // operator-level access to every account it's logged into.
+    dangerouslyAllowPrivateNetwork: false, // SSRF guard: no reaching your LAN/metadata
+    allowedHostnames: [],                  // allowlist the few hosts it genuinely needs
+  },
+
+  // ─────────────────────────────────────────────────────────────────────
+  // WHAT IT CAN BECOME — agents, skills, plugins
+  // ─────────────────────────────────────────────────────────────────────
+  agents: {
+    defaults: {
+      sandbox: {
+        scope: "agent",          // per-agent container isolation (vs "shared")
+        workspaceAccess: "ro",   // read-only workspace from inside the sandbox
+      },
+
+      // skills: ["weather", "morning-brief"],
+      //   ^ THE GOTCHA: a non-empty list REPLACES the defaults, it does not add to
+      //     them. Uncomment only when you want an explicit, final inventory of what
+      //     this agent can reach — which for a locked-down agent is the point.
+    },
+  },
+
+  plugins: {
+    allow: [],                   // plugins run IN-PROCESS: installing one is running
+                                 // its code with your agent's access. Allowlist, empty
+                                 // until you have a reason.
+  },
+}
